@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stealth-Os | Based on Stealth-Kernel</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+</head>
+
+<body>
+
+    <main id="desktop">
+        <div class="glow-sphere"></div>
+    </main>
+
+    <nav id="taskbar">
+        <div class="launcher-btn" onclick="toggleMenu()">
+            <span class="nexus-logo">N</span>
+        </div>
+        <div id="running-apps"></div>
+        <div class="system-tray">
+            <span id="clock">00:00:00</span>
+        </div>
+    </nav>
+
+    <div id="start-menu" class="glass-panel">
+
+    <!-- Desktop Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <div class="ctx-item" onclick="bootApp('terminal')">Open Terminal</div>
+        <div class="ctx-item" onclick="bootApp('explorer')">Open Explorer</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" onclick="bootApp('calculator')">Calculator</div>
+        <div class="ctx-item" onclick="bootApp('notes')">Notes</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" onclick="bootApp('monitor')">System Info</div>
+        <div class="ctx-item" onclick="bootApp('settings')">Settings</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" onclick="Kernel.exportSystem()">Export System</div>
+    </div>
+        <h3>Nexus Systems</h3>
+        <div class="app-grid">
+            <button class="app-item" onclick="bootApp('terminal')">
+                <div class="icon">⌨️</div>
+                <span>Terminal</span>
+            </button>
+            <button class="app-item" onclick="bootApp('editor')">
+                <div class="icon">📝</div>
+                <span>Text Editor</span>
+            </button>
+            <button class="app-item" onclick="bootApp('monitor')">
+                <div class="icon">📊</div>
+                <span>Sys-info</span>
+            </button>
+            <button class="app-item" onclick="bootApp('explorer')">
+                <div class="icon">📂</div>
+                <span>Explorer</span>
+            </button>
+            <button class="app-item" onclick="bootApp('console')">
+                <div class="icon">👨‍💻</div>
+                <span>Net-Console</span>
+            </button>
+            <button class="app-item" onclick="bootApp('scanner')">
+                <div class="icon">🔍</div>
+                <span>Scanner</span>
+            </button>
+            <button class="app-item" onclick="bootApp('nexusair')">
+                <div class="icon">🎭</div>
+                <span>Git-Master</span>
+            </button>
+            <button class="app-item" onclick="bootApp('calculator')">
+                <div class="icon">🔢</div>
+                <span>Calculator</span>
+            </button>
+            <button class="app-item" onclick="bootApp('notes')">
+                <div class="icon">📝</div>
+                <span>Notes</span>
+            </button>
+            <button class="app-item" onclick="bootApp('settings')">
+                <div class="icon">⚙️</div>
+                <span>Settings</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="kernel.js"></script>
+
+    <script>
+        window.UserM = {
+
+            // Inside window.UserM in index.html
+            save() {
+                localStorage.setItem('stealth_profile', JSON.stringify(this.profile));
+                console.log("Profile Synced to Disk.");
+            },
+            cwd: "/",
+
+            // FIX: Load existing FS from storage OR create new one
+            fs: JSON.parse(localStorage.getItem('stealth_fs')) || {
+                "/": { type: "dir", children: {} }
+            },
+
+            profile: JSON.parse(localStorage.getItem('stealth_profile')) || {
+                username: 'Stealth-user',
+                password: null,
+                role: 'Admin'
+            },
+
+            isAuthenticated: false,
+            pythonReady: false,
+
+            // Helper: Resolve paths within the tree
+            resolvePath(path) {
+                if (!path || path === "/") return this.fs["/"];
+                let parts = path.split("/").filter(p => p);
+                let current = this.fs["/"];
+                for (let p of parts) {
+                    if (current.children && current.children[p]) {
+                        current = current.children[p];
+                    } else {
+                        return null;
+                    }
+                }
+                return current;
+            },
+
+            async boot() {
+                this.initPython();
+
+                // Re-read from disk one last time before checking password
+                const saved = JSON.parse(localStorage.getItem('stealth_profile'));
+                if (saved) this.profile = saved;
+
+                if (this.profile.password && this.profile.password !== "") {
+                    this.showLockScreen();
+                } else {
+                    this.isAuthenticated = true;
+                    this.initOS();
+                }
+            },
+
+            async initPython() {
+                try {
+                    window.pyodide = await loadPyodide();
+                    await window.pyodide.loadPackage("micropip");
+
+                    const fs = window.pyodide.FS;
+                    if (!fs.analyzePath('/offline_storage').exists) {
+                        fs.mkdir('/offline_storage');
+                    }
+                    fs.mount(fs.filesystems.IDBFS, {}, '/offline_storage');
+
+                    fs.syncfs(true, (err) => {
+                        if (err) console.error("IDBFS Sync Error:", err);
+                        else console.log("Python Storage Linked.");
+                    });
+
+                    window.pyodide.runPython("import sys\nsys.path.append('/offline_storage')");
+                    this.pythonReady = true;
+                } catch (e) {
+                    console.error("Python Init Failed:", e);
+                }
+            },
+
+            showLockScreen() {
+                const pass = prompt(`STEALTH-OS LOCKED\nEnter Password:`);
+                if (pass === this.profile.password) {
+                    this.isAuthenticated = true;
+                    this.initOS();
+                } else {
+                    alert("ACCESS DENIED");
+                    location.reload();
+                }
+            },
+
+            initOS() {
+                console.log("OS: Initializing Kernel...");
+                // Kernel is already instantiated globally via kernel.js
+                // We just trigger a refresh if needed
+                if (window.refreshDesktop) window.refreshDesktop();
+            }
+        };
+
+        // START SYSTEM
+        window.UserM.boot();
+
+        // System Maintenance Daemon
+        setInterval(() => {
+            if (window.Kernel) Kernel.scrapeGlobalSymbols();
+        }, 10000);
+
+        // UI Logic
+        function startSystemClock() {
+            const clockEl = document.getElementById('clock');
+            if (!clockEl) return;
+
+            const update = () => {
+                const now = new Date();
+
+                // Full Date + Time format: "Thu, Apr 9, 2026 08:31:15"
+                const options = {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                };
+
+                // .replace(/,/g, '') removes commas for a cleaner "CLI" look
+                clockEl.innerText = now.toLocaleString('en-US', options).replace(/,/g, '');
+            };
+
+            setInterval(update, 1000);
+            update(); // Run immediately
+        }
+
+        // Call this in your OS init or at the bottom of your script
+        startSystemClock(); // Run once immediately so it doesn't wait 1s to start
+
+        function toggleMenu() {
+            document.getElementById('start-menu').classList.toggle('active');
+        }
+
+        async function bootApp(appName) {
+            toggleMenu();
+            const appVarName = appName.charAt(0).toUpperCase() + appName.slice(1) + 'App';
+            const fileName = appName.toLowerCase() + '.js';
+
+            if (window[appVarName]) {
+                Kernel.launch(window[appVarName]);
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = `apps/${fileName}`;
+            script.onload = () => {
+                if (window[appVarName]) Kernel.launch(window[appVarName]);
+            };
+            document.head.appendChild(script);
+        }
+        // Desktop right-click context menu
+        const ctxMenu = document.getElementById('context-menu');
+        document.getElementById('desktop').addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            ctxMenu.style.display = 'block';
+            ctxMenu.style.left = e.clientX + 'px';
+            ctxMenu.style.top = e.clientY + 'px';
+        });
+        document.addEventListener('click', () => ctxMenu.style.display = 'none');
+
+        // Restore saved appearance settings on boot
+        (function restoreSettings() {
+            const saved = JSON.parse(localStorage.getItem('stealth_settings') || '{}');
+            if (saved.accent) {
+                document.documentElement.style.setProperty('--accent', saved.accent);
+                const launcher = document.querySelector('.launcher-btn');
+                if (launcher) {
+                    launcher.style.background = saved.accent;
+                    launcher.style.boxShadow = '0 0 15px ' + saved.accent + '66';
+                }
+            }
+            if (saved.wallpaper !== undefined) {
+                const wallpapers = [
+                    { bg: '#020617', glow: 'rgba(56, 189, 248, 0.1)' },
+                    { bg: '#001220', glow: 'rgba(6, 182, 212, 0.12)' },
+                    { bg: '#0f0720', glow: 'rgba(139, 92, 246, 0.12)' },
+                    { bg: '#051007', glow: 'rgba(52, 211, 153, 0.1)' },
+                    { bg: '#120508', glow: 'rgba(248, 113, 113, 0.1)' },
+                    { bg: '#1a1207', glow: 'rgba(251, 191, 36, 0.08)' },
+                ];
+                const wp = wallpapers[saved.wallpaper];
+                if (wp) {
+                    document.documentElement.style.setProperty('--bg', wp.bg);
+                    document.body.style.backgroundColor = wp.bg;
+                    const glow = document.querySelector('.glow-sphere');
+                    if (glow) glow.style.background = 'radial-gradient(circle, ' + wp.glow + ' 0%, transparent 70%)';
+                }
+            }
+        })();
+    </script>
+</body>
+
+</html>
