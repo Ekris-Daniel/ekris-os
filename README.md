@@ -1,4 +1,4 @@
-Ekris OS
+# Ekris OS
 
 A browser-based operating-system experiment built from the idea that logic is more fundamental than programming-language syntax.
 
@@ -10,7 +10,7 @@ Languages differ in syntax, semantics, and the level of control they provide ove
 
 That became a design axiom for how I approach software.
 
-What is Ekris OS?
+# What is Ekris OS?
 
 Ekris OS is an operating-system-like environment running inside a browser.
 
